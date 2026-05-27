@@ -1,0 +1,6 @@
+# WebSpy v2.0 — Python Dependencies
+# Author: Silentium Noctis
+# Install: pip3 install -r requirements.txt
+
+requests>=2.31.0
+urllib3>=2.0.0
