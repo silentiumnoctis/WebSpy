@@ -255,13 +255,7 @@ Checks Secure, HttpOnly, SameSite flags. Detects JWT tokens, MD5-like weak sessi
 
 ## Screenshots
 
-| Banner & Start | Cloudflare Bypass | Vulnerability Findings |
-|:-:|:-:|:-:|
-| ![banner](screenshots/banner.png) | ![bypass](screenshots/cf_bypass.png) | ![vulns](screenshots/findings.png) |
-
-| Security Headers | XSS Detection | API Discovery |
-|:-:|:-:|:-:|
-| ![headers](screenshots/headers.png) | ![xss](screenshots/xss.png) | ![api](screenshots/api.png) |
+![WebSpy v2.0 — Advanced Penetration Testing Framework](screenshots/banner.png)
 
 ---
 
