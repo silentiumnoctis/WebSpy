@@ -1,0 +1,61 @@
+# WebSpy CSRF / Admin Path List
+# Author: Silentium Noctis
+# Format: one path per line
+
+# ── Admin Panels ─────────────────────────────────────────────
+/admin
+/admin/
+/admin/dashboard
+/admin/login
+/admin/users
+/admin/config
+/admin/settings
+/administrator
+/administrator/
+/dashboard
+/panel
+/control
+/manager
+/management
+
+# ── CMS Admin ────────────────────────────────────────────────
+/wp-admin
+/wp-admin/
+/wp-admin/users.php
+/wp-admin/options-general.php
+/wp-login.php
+/joomla/administrator
+/drupal/admin
+
+# ── API Admin ────────────────────────────────────────────────
+/api/admin
+/api/users
+/api/config
+/api/settings
+/api/delete
+/api/update
+/api/create
+
+# ── User Panels ───────────────────────────────────────────────
+/user/profile
+/user/settings
+/account/settings
+/account/delete
+/profile/edit
+/settings/password
+
+# ── Sensitive Actions ─────────────────────────────────────────
+/internal
+/private
+/secure
+/backup
+/export
+/import
+/upload
+/delete
+/.well-known/admin
+/manage
+/superadmin
+/root
+/system
+/server

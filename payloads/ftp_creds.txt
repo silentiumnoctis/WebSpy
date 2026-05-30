@@ -1,0 +1,57 @@
+# WebSpy FTP Credential List
+# Author: Silentium Noctis
+# Format: username:password  (one per line)
+# Lines starting with # are comments
+
+# ── Anonymous ────────────────────────────────────────────────
+anonymous:anonymous@
+anonymous:
+anonymous:anonymous
+ftp:ftp
+ftp:
+ftp@localhost:ftp
+
+# ── Default Admin ────────────────────────────────────────────
+admin:admin
+admin:password
+admin:1234
+admin:12345
+admin:123456
+admin:admin123
+admin:
+root:root
+root:toor
+root:password
+root:123456
+root:
+
+# ── Common Users ─────────────────────────────────────────────
+user:user
+user:password
+user:1234
+test:test
+test:password
+guest:guest
+guest:
+ftpuser:ftpuser
+ftpuser:password
+backup:backup
+backup:
+upload:upload
+data:data
+files:files
+web:web
+www:www
+www-data:www-data
+webmaster:webmaster
+server:server
+service:service
+support:support
+deploy:deploy
+devops:devops
+
+# ── Panel Defaults ────────────────────────────────────────────
+cpanel:cpanel
+plesk:plesk
+webmin:webmin
+hosting:hosting

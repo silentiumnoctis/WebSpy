@@ -31,6 +31,8 @@ ENV/
 *.csv
 *.xml
 !requirements.txt
+!payloads/*.txt
+!WebSpy_User_Manual.md
 
 # OS
 .DS_Store

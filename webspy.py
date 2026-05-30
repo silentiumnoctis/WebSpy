@@ -21,8 +21,81 @@ R="\033[0;31m"; BR="\033[1;31m"; G="\033[0;32m"; BG="\033[1;32m"
 Y="\033[0;33m"; BY="\033[1;33m"; C="\033[0;36m"; BC="\033[1;36m"
 W="\033[1;37m"; NC="\033[0m"
 
-VERSION = "2.0"
+VERSION = "2.1"
 TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
+PAYLOAD_DIR = os.path.join(TOOL_DIR, "payloads")
+
+# ── Payload Loader ────────────────────────────────────────────────────────────
+def load_payload_file(filepath):
+    """Load payloads from a .txt file. Skips blank lines and # comments."""
+    payloads = []
+    try:
+        with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    payloads.append(line)
+        info(f"Loaded {len(payloads)} payloads from {os.path.basename(filepath)}")
+    except FileNotFoundError:
+        err(f"Payload file not found: {filepath}")
+    except Exception as e:
+        err(f"Error loading payload file: {e}")
+    return payloads
+
+def get_xss_payloads(custom_file=None):
+    """Return XSS payloads — custom file > default file > hardcoded fallback."""
+    if custom_file:
+        p = load_payload_file(custom_file)
+        if p: return p
+    default = os.path.join(PAYLOAD_DIR, "xss.txt")
+    if os.path.exists(default):
+        p = load_payload_file(default)
+        if p: return p
+    return [
+        '<script>alert(1)</script>', '"><script>alert(1)</script>',
+        "'><script>alert(1)</script>", '<img src=x onerror=alert(1)>',
+        '<svg onload=alert(1)>', 'javascript:alert(1)', '{{7*7}}', '${7*7}',
+    ]
+
+def get_ftp_creds(custom_file=None):
+    """Return FTP creds list — custom file > default file > hardcoded fallback."""
+    if custom_file:
+        raw = load_payload_file(custom_file)
+        if raw:
+            creds = []
+            for line in raw:
+                if ":" in line:
+                    u, p = line.split(":", 1)
+                    creds.append((u.strip(), p.strip()))
+            return creds
+    default = os.path.join(PAYLOAD_DIR, "ftp_creds.txt")
+    if os.path.exists(default):
+        raw = load_payload_file(default)
+        creds = []
+        for line in raw:
+            if ":" in line:
+                u, p = line.split(":", 1)
+                creds.append((u.strip(), p.strip()))
+        if creds: return creds
+    return [
+        ("anonymous","anonymous@"), ("anonymous",""), ("ftp","ftp"),
+        ("admin","admin"), ("admin","password"), ("root","root"),
+        ("root","toor"), ("test","test"), ("guest","guest"),
+    ]
+
+def get_csrf_paths(custom_file=None):
+    """Return admin/CSRF paths — custom file > default file > hardcoded fallback."""
+    if custom_file:
+        p = load_payload_file(custom_file)
+        if p: return p
+    default = os.path.join(PAYLOAD_DIR, "csrf_paths.txt")
+    if os.path.exists(default):
+        p = load_payload_file(default)
+        if p: return p
+    return [
+        "/admin", "/admin/", "/dashboard", "/panel", "/wp-admin",
+        "/api/admin", "/api/users", "/user/profile", "/internal",
+    ]
 
 # ── Timing Profiles (like nmap -T) ───────────────────────────────────────────
 TIMING = {
@@ -512,14 +585,17 @@ def cf_bypass(domain, evasion=False, proxy=None, verbose=False):
     def check_sub(sub):
         h = f"{sub}.{domain}"
         try:
+            old_to = socket.getdefaulttimeout()
+            socket.setdefaulttimeout(3)
             resolved_ip = socket.gethostbyname(h)
+            socket.setdefaulttimeout(old_to)
             if resolved_ip and not is_cf_ip(resolved_ip):
                 return {"subdomain": h, "ip": resolved_ip, "method": "Subdomain Bypass"}
         except Exception:
             pass
         return None
 
-    with ThreadPoolExecutor(max_workers=40) as ex:
+    with ThreadPoolExecutor(max_workers=20) as ex:
         futs = [ex.submit(check_sub, s) for s in bypass_subs]
         for f in as_completed(futs):
             r = f.result()
@@ -591,9 +667,19 @@ def cf_bypass(domain, evasion=False, proxy=None, verbose=False):
 
     if unique:
         head("ORIGIN IPs FOUND — Browser Verification")
+        # Show all found origins
         for o in unique:
-            ip = o.get("ip") or o.get("subdomain","")
-            verify_ip_ports(domain, ip)
+            ok(f"ORIGIN | {o.get('method','?')} → {o.get('subdomain', o.get('ip','?'))} [{o.get('ip','')}]")
+        # Deep verify top 3 unique IPs only (speed)
+        checked = set()
+        for o in unique:
+            ip = o.get("ip","")
+            if ip and ip not in checked:
+                verify_ip_ports(domain, ip)
+                checked.add(ip)
+            if len(checked) >= 3:
+                info(f"Remaining {len(unique)-3} IPs — run --cf on specific subdomain to check more")
+                break
     else:
         warn("Origin IP not found automatically")
         info(f"Manual: https://securitytrails.com/domain/{domain}/history/a")
@@ -616,7 +702,7 @@ def verify_ip_ports(domain, ip):
         10000:("HTTP",  "Webmin"),
         8888: ("HTTP",  "Jupyter / Alt panel"),
     }
-    WEB_PORTS = [80, 443, 8080, 8443, 8000, 3000, 5000, 9000, 8800]
+    WEB_PORTS = [80, 443, 8080, 8443, 8000]
 
     print(f"\n  {W}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━{NC}")
     print(f"  {W}IP: {BC}{ip}{NC}")
@@ -632,7 +718,7 @@ def verify_ip_ports(domain, ip):
         if host_hdr:
             hdrs["Host"] = host_hdr
         try:
-            r = requests.get(url, timeout=5, verify=False,
+            r = requests.get(url, timeout=3, verify=False,
                              allow_redirects=True, headers=hdrs)
             title = re.search(r'<title[^>]*>(.*?)</title>', r.text, re.I|re.S)
             title = title.group(1).strip()[:30] if title else ""
@@ -1064,18 +1150,12 @@ def nikto_scan(domain, t_level=3, proxy=None, verbose=False):
 
 # ── Module: FTP Check ────────────────────────────────────────────────────────
 
-def ftp_check(target, verbose=False):
+def ftp_check(target, verbose=False, payload_file=None):
     import ftplib
     head("FTP SECURITY CHECK")
     findings = []
 
-    FTP_CREDS = [
-        ("anonymous", "anonymous@"), ("anonymous", ""), ("ftp", "ftp"),
-        ("ftp", ""), ("admin", "admin"), ("admin", "password"),
-        ("admin", "1234"), ("admin", ""), ("root", "root"),
-        ("root", "toor"), ("root", ""), ("user", "user"),
-        ("test", "test"), ("guest", "guest"), ("ftpuser", "ftpuser"),
-    ]
+    FTP_CREDS = get_ftp_creds(payload_file)
 
     # Check port open
     for port in [21, 2121]:
@@ -1236,17 +1316,28 @@ def sensitive_info(domain, evasion=False, proxy=None, verbose=False):
         "Token":        r'(?i)(token|auth_token|access_token)\s*[=:]\s*["\']?([a-zA-Z0-9_\-\.]{20,})',
     }
 
+    # Baseline to filter CMS false positives
+    _base_r   = req(f"https://{domain}", evasion=evasion, proxy=proxy, timeout=5)
+    _base_sz  = len(_base_r.content) if _base_r else 0
+    _fake_r   = req(f"https://{domain}/ns-fake-404-xyz987", evasion=evasion, proxy=proxy, timeout=5)
+    _fake_sz  = len(_fake_r.content) if _fake_r else 0
+
     step(f"Scanning {len(SENSITIVE_PATHS)} sensitive paths...")
     for path in SENSITIVE_PATHS:
-        r = req(f"https://{domain}{path}", evasion=evasion, proxy=proxy, timeout=5)
+        r = req(f"https://{domain}{path}", evasion=evasion, proxy=proxy, timeout=4)
         if not r:
-            r = req(f"http://{domain}{path}", evasion=evasion, proxy=proxy, timeout=5)
+            r = req(f"http://{domain}{path}", evasion=evasion, proxy=proxy, timeout=4)
         if not r:
             continue
 
         if r.status_code in [200, 206]:
             size = len(r.content)
             if size < 10:
+                continue
+            # Skip CMS homepage redirects (false positives)
+            if _base_sz > 0 and abs(size - _base_sz) < 500:
+                continue
+            if _fake_sz > 0 and abs(size - _fake_sz) < 500:
                 continue
 
             # Check content for sensitive patterns
@@ -1359,21 +1450,11 @@ def cookie_session_analysis(domain, evasion=False, proxy=None, verbose=False):
 
 # ── Module: XSS Check ─────────────────────────────────────────────────────────
 
-def xss_check(domain, evasion=False, proxy=None, verbose=False):
+def xss_check(domain, evasion=False, proxy=None, verbose=False, payload_file=None):
     head("XSS DETECTION")
     findings = []
 
-    XSS_PAYLOADS = [
-        '<script>alert(1)</script>',
-        '"><script>alert(1)</script>',
-        "'><script>alert(1)</script>",
-        '<img src=x onerror=alert(1)>',
-        '"><img src=x onerror=alert(1)>',
-        '<svg onload=alert(1)>',
-        'javascript:alert(1)',
-        '{{7*7}}',           # SSTI test
-        '${7*7}',
-    ]
+    XSS_PAYLOADS = get_xss_payloads(payload_file)
 
     MARKER = "XSS_WEBSPY_TEST"
 
@@ -1438,7 +1519,7 @@ def xss_check(domain, evasion=False, proxy=None, verbose=False):
 
 # ── Module: CSRF & Broken Access Control ────────────────────────────────────
 
-def csrf_bac_check(domain, evasion=False, proxy=None, verbose=False):
+def csrf_bac_check(domain, evasion=False, proxy=None, verbose=False, payload_file=None):
     head("CSRF + BROKEN ACCESS CONTROL")
     findings = []
 
@@ -1481,15 +1562,7 @@ def csrf_bac_check(domain, evasion=False, proxy=None, verbose=False):
     # ── Broken Access Control ─────────────────────────────────────────────────
     step("Broken Access Control checks...")
 
-    ADMIN_PATHS = [
-        "/admin", "/admin/", "/admin/dashboard", "/admin/users",
-        "/dashboard", "/panel", "/control", "/manager",
-        "/wp-admin", "/wp-admin/users.php",
-        "/api/admin", "/api/users", "/api/config",
-        "/user/profile", "/account/settings",
-        "/internal", "/private", "/secure",
-        "/.well-known/admin",
-    ]
+    ADMIN_PATHS = get_csrf_paths(payload_file)
 
     BAC_BYPASS_HEADERS = [
         {"X-Original-URL": "/admin"},
@@ -1563,6 +1636,12 @@ def api_discovery(domain, evasion=False, proxy=None, verbose=False):
         "/_ah/api", "/__api__",
     ]
 
+    # Get baseline homepage size to filter false positives (WordPress/CMS redirects)
+    _base = req(f"https://{domain}", evasion=evasion, proxy=proxy, timeout=6)
+    _base_size = len(_base.content) if _base else 0
+    _base_404 = req(f"https://{domain}/this-path-should-not-exist-xyz123abc", evasion=evasion, proxy=proxy, timeout=5)
+    _fake_404_size = len(_base_404.content) if _base_404 else 0
+
     step(f"Scanning {len(API_PATHS)} API endpoints...")
     for path in API_PATHS:
         for scheme in ["https", "http"]:
@@ -1573,6 +1652,10 @@ def api_discovery(domain, evasion=False, proxy=None, verbose=False):
             ctype = r.headers.get("content-type","")
             is_json = "json" in ctype or r.text.strip().startswith(("{","["))
             size = len(r.content)
+
+            # Filter out CMS false positives (same size as homepage or fake 404)
+            if size == _base_size or (_fake_404_size > 0 and abs(size - _fake_404_size) < 500):
+                continue
 
             if r.status_code in [200, 201] and size > 50:
                 found(f"API [{r.status_code}] {path}  ({size}b)  JSON:{is_json}")
@@ -1831,8 +1914,12 @@ def run_scan(opts):
     if opts.nikto:
         all_findings["nikto"] = nikto_scan(domain, t_level, proxy, verbose)
 
+    px = getattr(opts, "payload_xss",  None)
+    pf = getattr(opts, "payload_ftp",  None)
+    pc = getattr(opts, "payload_csrf", None)
+
     if getattr(opts, "ftp", False):
-        all_findings["ftp"] = ftp_check(domain, verbose)
+        all_findings["ftp"] = ftp_check(domain, verbose, payload_file=pf)
 
     if getattr(opts, "ssh", False):
         all_findings["ssh"] = ssh_check(domain, verbose)
@@ -1844,10 +1931,10 @@ def run_scan(opts):
         all_findings["cookie"] = cookie_session_analysis(domain, evasion, proxy, verbose)
 
     if getattr(opts, "xss", False):
-        all_findings["xss"] = xss_check(domain, evasion, proxy, verbose)
+        all_findings["xss"] = xss_check(domain, evasion, proxy, verbose, payload_file=px)
 
     if getattr(opts, "csrf", False):
-        all_findings["csrf"] = csrf_bac_check(domain, evasion, proxy, verbose)
+        all_findings["csrf"] = csrf_bac_check(domain, evasion, proxy, verbose, payload_file=pc)
 
     if getattr(opts, "api", False):
         all_findings["api"] = api_discovery(domain, evasion, proxy, verbose)
@@ -1911,6 +1998,13 @@ def main():
     p.add_argument("--xss",       action="store_true")
     p.add_argument("--csrf",      action="store_true")
     p.add_argument("--api",       action="store_true")
+    # Custom payload files
+    p.add_argument("--px", "--payload-xss",  dest="payload_xss",  default=None,
+                   metavar="FILE", help="Custom XSS payload file (.txt)")
+    p.add_argument("--pf", "--payload-ftp",  dest="payload_ftp",  default=None,
+                   metavar="FILE", help="Custom FTP credential file (user:pass per line)")
+    p.add_argument("--pc", "--payload-csrf", dest="payload_csrf", default=None,
+                   metavar="FILE", help="Custom admin/CSRF path file (.txt)")
     # Output
     p.add_argument("-o","--output",  default=None)
     p.add_argument("-j","--json",    default=None)
