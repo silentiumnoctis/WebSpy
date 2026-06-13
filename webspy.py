@@ -21,7 +21,7 @@ R="\033[0;31m"; BR="\033[1;31m"; G="\033[0;32m"; BG="\033[1;32m"
 Y="\033[0;33m"; BY="\033[1;33m"; C="\033[0;36m"; BC="\033[1;36m"
 W="\033[1;37m"; NC="\033[0m"
 
-VERSION = "2.1"
+VERSION = "2.2"
 TOOL_DIR = os.path.dirname(os.path.abspath(__file__))
 PAYLOAD_DIR = os.path.join(TOOL_DIR, "payloads")
 
@@ -207,6 +207,13 @@ def show_help():
   {G}--csrf{NC}                     CSRF token check + Broken Access Control + IDOR
   {G}--api{NC}                      API endpoint discovery + CORS + GraphQL introspection
 
+{W}CUSTOM PAYLOAD FILES:{NC}
+  {G}--px <file>{NC}                Custom XSS payload file      (.txt, one payload per line)
+  {G}--pf <file>{NC}                Custom FTP credential file   (.txt, user:pass per line)
+  {G}--pc <file>{NC}                Custom admin/CSRF path file  (.txt, one path per line)
+                             {C}Default payloads auto-loaded from: payloads/{NC}
+                             {C}  xss.txt · ftp_creds.txt · csrf_paths.txt{NC}
+
 {W}CONTROL:{NC}
   {G}-T <1-5>{NC}                   Timing / threat control:
                              1 = Stealth    (3s delay,  2  threads) — IDS evasion
@@ -286,6 +293,18 @@ def show_help():
 
   {Y}# FTP + SSH service check on IP{NC}
   python3 webspy.py -t 192.168.1.1 --ftp --ssh -T3
+
+  {Y}# XSS scan with custom payload file{NC}
+  python3 webspy.py -t example.com --xss --px /path/to/my_xss.txt
+
+  {Y}# FTP check with custom credentials file{NC}
+  python3 webspy.py -t example.com --ftp --pf /path/to/creds.txt
+
+  {Y}# CSRF scan with custom admin paths{NC}
+  python3 webspy.py -t example.com --csrf --pc /path/to/paths.txt
+
+  {Y}# All vuln modules with all custom payloads{NC}
+  python3 webspy.py -t example.com --xss --ftp --csrf --px my_xss.txt --pf my_creds.txt --pc my_paths.txt
 
 {W}POST-SCAN COMMANDS:{NC}
   {Y}# Origin IP found — bypass Cloudflare WAF:{NC}
@@ -710,8 +729,9 @@ def verify_ip_ports(domain, ip):
     print(f"  {W}{'PORT':<7} {'PROTO':<7} {'DIRECT (browser)':<26} {'HOST HEADER':<24} {'STATUS'}{NC}")
     print(f"  {'─'*80}")
 
-    browser_accessible = []
-    admin_panels       = []
+    browser_accessible    = []
+    host_header_accessible = []
+    admin_panels          = []
 
     def probe(url, host_hdr=None):
         hdrs = {"User-Agent": USER_AGENTS[0]}
@@ -745,13 +765,17 @@ def verify_ip_ports(domain, ip):
 
         status_note = ""
         if d_code == 200 and d_size > 500:
-            status_note = f"{G}BROWSER OK{NC} — {d_title}"
+            status_note = f"{G}BROWSER OK (Direct){NC} — {d_title}"
             browser_accessible.append({
                 "url": url, "port": port, "scheme": scheme,
                 "title": d_title, "type": "website"
             })
         elif h_code == 200 and d_code in [403, 0, 301, 302]:
-            status_note = f"{Y}Virtual hosting{NC} (needs Host header)"
+            status_note = f"{BG}CONFIRMED ORIGIN{NC} — Host header bypasses CF"
+            host_header_accessible.append({
+                "url": url, "port": port, "scheme": scheme,
+                "title": h_title, "host": domain
+            })
         elif d_code in [301, 302]:
             status_note = f"{Y}Redirect{NC}"
 
@@ -791,18 +815,43 @@ def verify_ip_ports(domain, ip):
     # ── Final verified summary ─────────────────────────────────────────────
     print()
 
-    if admin_panels or browser_accessible:
+    if admin_panels or browser_accessible or host_header_accessible:
         print(f"\n  {BG}{'═'*60}{NC}")
         print(f"  {BG} VERIFIED BROWSER-ACCESSIBLE URLs for {ip}{NC}")
         print(f"  {BG}{'═'*60}{NC}\n")
 
         if browser_accessible:
-            print(f"  {W}[ Website Direct Access ]{NC}")
+            print(f"  {W}[ Direct Browser Access — No tricks needed ]{NC}")
             for b in browser_accessible:
                 print(f"  {G}→ {b['url']}{NC}")
                 if b.get("title"):
                     print(f"    Title : {b['title']}")
             print()
+
+        if host_header_accessible:
+            print(f"  {BG}[ CONFIRMED ORIGIN IP — Cloudflare Bypassed ]{NC}")
+            print(f"  {C}Site is behind virtual hosting — use Host header to access directly.{NC}\n")
+            for h in host_header_accessible:
+                port_str = f":{h['port']}" if h['port'] not in [80, 443] else ""
+                curl_flag = "-sk" if h["scheme"] == "https" else "-s"
+                print(f"  {W}Origin URL : {BY}{h['url']}{NC}")
+                if h.get("title"):
+                    print(f"  {W}Page Title : {C}{h['title']}{NC}")
+                print()
+                print(f"  {W}── Method 1: curl (instant verify) ─────────────────────────{NC}")
+                print(f"  {G}  curl {curl_flag} -H 'Host: {h['host']}' {h['url']}{NC}")
+                print()
+                print(f"  {W}── Method 2: /etc/hosts (open in browser normally) ─────────{NC}")
+                print(f"  {C}  Linux/Mac:{NC}")
+                print(f"  {G}    echo '{ip}  {h['host']}' | sudo tee -a /etc/hosts{NC}")
+                print(f"  {G}    # Then open: {h['scheme']}://{h['host']}{port_str}/{NC}")
+                print(f"  {C}  Windows:{NC}  C:\\Windows\\System32\\drivers\\etc\\hosts")
+                print(f"  {G}    {ip}  {h['host']}{NC}")
+                print()
+                print(f"  {W}── Method 3: curl with output (save site) ──────────────────{NC}")
+                print(f"  {G}  curl {curl_flag} -H 'Host: {h['host']}' {h['url']} -o site.html{NC}")
+                print()
+            results_store.append(f"[ORIGIN CONFIRMED] {ip} responds with Host: {domain}")
 
         if admin_panels:
             print(f"  {W}[ Admin Panels — Open in browser now ]{NC}")
@@ -813,18 +862,10 @@ def verify_ip_ports(domain, ip):
                     print(f"         Title  : {p['title']}")
             print()
 
-        # /etc/hosts tip for virtual-hosted site
-        if not browser_accessible:
-            print(f"  {W}[ Site Access via IP (Virtual Hosting fix) ]{NC}")
-            print(f"  {C}Add to /etc/hosts then browse normally:{NC}")
-            print(f"  {G}  echo '{ip} {domain}' | sudo tee -a /etc/hosts{NC}")
-            print(f"  {G}  # Then open: https://{domain}{NC}")
-            print(f"  {C}Windows:{NC} C:\\Windows\\System32\\drivers\\etc\\hosts")
-            print(f"  {G}  {ip}  {domain}{NC}\n")
     else:
         warn(f"{ip} — all ports closed or filtered")
 
-    return {"browser": browser_accessible, "panels": admin_panels}
+    return {"browser": browser_accessible, "panels": admin_panels, "host_header": host_header_accessible}
 
 # ── Module: Subdomain Enumeration ─────────────────────────────────────────────
 
